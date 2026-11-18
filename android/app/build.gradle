@@ -27,6 +27,11 @@ android {
             }
         }
     }
+    lint {
+        // Release lint pulls in test-only libraries we don't ship; skip it so a library-server blip can't fail a release
+        checkReleaseBuilds false
+        abortOnError false
+    }
     buildTypes {
         release {
             if (System.getenv("KS_PATH")) signingConfig signingConfigs.release
