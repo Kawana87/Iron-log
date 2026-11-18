@@ -89,12 +89,21 @@ jobs:
       # Keep the build log in the repo (ci-logs branch) so problems can be diagnosed without Actions access.
       - name: Save build log
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p /tmp/logs
+          cp build.log "/tmp/logs/run-${{ github.run_number }}-${{ job.status }}.log" 2>/dev/null || echo "no log" > "/tmp/logs/run-${{ github.run_number }}.log"
+          URL="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          cd "$RUNNER_TEMP" && rm -rf logs
+          if ! git clone -q --depth 1 --branch ci-logs "$URL" logs 2>/dev/null; then
+            mkdir logs && cd logs && git init -q && git checkout -q -b ci-logs && git remote add origin "$URL" && cd ..
+          fi
+          cd logs
           git config user.name "iron-log-ci"
           git config user.email "iron-log-ci@users.noreply.github.com"
-          mkdir -p /tmp/logs && cp build.log "/tmp/logs/run-${{ github.run_number }}-${{ job.status }}.log" 2>/dev/null || echo "no log" > /tmp/logs/run-${{ github.run_number }}.log
-          git fetch origin ci-logs --depth=1 2>/dev/null && git checkout -q -B ci-logs FETCH_HEAD || git checkout -q --orphan ci-logs
-          git rm -rq --cached . 2>/dev/null || true
-          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp /tmp/logs/* . && ls -t *.log | tail -n +11 | xargs -r rm --
-          git add -A && git commit -qm "Build log ${{ github.run_number }} (${{ job.status }})" && git push -q origin ci-logs
+          cp /tmp/logs/* .
+          ls -t *.log | tail -n +11 | xargs -r rm --
+          git add -A
+          git commit -qm "Build log ${{ github.run_number }} (${{ job.status }})"
+          git push -q origin ci-logs
