@@ -94,6 +94,19 @@ select,.fld input{height:46px}
 .plw{color:var(--red);font-weight:600}
 .bnr{border-color:var(--red)}
 .bnr p{margin:4px 0 10px}
+.set.wset{padding:3px 0}
+.set.wset .wv{font:600 19px/1 'Barlow Condensed',sans-serif;text-align:center;color:var(--mut);white-space:nowrap}
+.set.wset .wv small{font:500 12px Inter,sans-serif}
+.set.wset .n{font-weight:600}
+.set.wset .chk{height:38px}
+.set.xset .n{color:var(--red);font-weight:700}
+.addset{margin-top:6px}
+.tgl{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:8px;font-weight:500;cursor:pointer}
+.tgl input{width:22px;height:22px;accent-color:var(--red)}
+.wus{display:grid;grid-template-columns:20px minmax(0,1fr) 12px minmax(0,1fr) 44px;gap:8px;align-items:center;margin-top:8px}
+.wus input{width:100%;height:44px;font:600 19px 'Barlow Condensed',sans-serif;text-align:center;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:10px;padding:0 34px 0 8px}
+.wus .n{color:var(--mut);font-size:13px;text-align:center}
+.wus .btn{padding:0;min-height:44px}
 #xsheet{position:fixed;inset:0;z-index:9;display:grid;align-items:end}
 #xsheet[hidden]{display:none}
 .xsp{max-height:88vh;overflow:auto;overscroll-behavior:contain}
@@ -210,7 +223,7 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 /* ---------- state ---------- */
-const defaults=()=>({v:1,unit:'lb',round:5,bar:45,rest:180,active:null,progs:{},mem:{},draft:null,dr:{},pcw:0,inv:{lb:{55:0,45:8,35:1,25:1,10:2,5:1,2.5:1,1.25:0},kg:{25:8,20:1,15:1,10:1,5:1,2.5:1,2:0,1.5:0,1.25:1,1:0,0.5:0}}});
+const defaults=()=>({v:1,unit:'lb',round:5,bar:45,rest:180,active:null,progs:{},mem:{},draft:null,dr:{},wu:{on:true,rest:60,steps:[{p:0,r:5},{p:0,r:5},{p:40,r:5},{p:60,r:3},{p:80,r:2}]},pcw:0,inv:{lb:{55:0,45:8,35:1,25:1,10:2,5:1,2.5:1,1.25:0},kg:{25:8,20:1,15:1,10:1,5:1,2.5:1,2:0,1.5:0,1.25:1,1:0,0.5:0}}});
 let P=defaults(),L=[];
 try{const s=localStorage.getItem('ironlog.p');if(s)P={...defaults(),...JSON.parse(s)};const l=localStorage.getItem('ironlog.l');if(l)L=JSON.parse(l)}catch(e){}
 
@@ -316,6 +329,16 @@ const XL={};for(const[g,list]of XG)for(const[n,eq,of]of list)XL[n]={g,eq,of:of||
 const BASEN={squat:'Squat',bench:'Bench press',ohp:'Overhead press',deadlift:'Deadlift',clean:'Power clean'};
 const REC={squat:['Leg press','Bulgarian split squat','Leg extension','Leg curl','Back extension','Standing calf raise'],bench:['Dips','Dumbbell bench press','Triceps pushdown','Dumbbell row','Face pull','Push-up'],ohp:['Lateral raise','Face pull','Chin-up','Triceps pushdown','Rear delt fly'],deadlift:['Romanian deadlift','Back extension','Leg curl','Barbell row','Hanging leg raise','Shrug'],clean:['Hang power clean','Kettlebell swing','Shrug','Face pull']};
 const isBar=e=>e.sw?!!e.bar:BARL.has(e.lift);
+/* warm-ups: percentages of the first work set, barbell lifts only, once per lift per session */
+function wuCfg(){const D=defaults().wu,w=P.wu&&typeof P.wu==='object'?P.wu:{};return{on:w.on!==false,rest:isFinite(+w.rest)?+w.rest:D.rest,steps:Array.isArray(w.steps)?w.steps:D.steps}}
+function wuFor(e,seen){const c=wuCfg();if(!c.on||!isBar(e)||!e.sets.length)return[];const k=e.sw||e.lift||e.name;if(seen.has(k))return[];seen.add(k);
+ const base=+e.sets[0].w||0,bar=+P.bar||0;if(base<=bar)return[];const out=[];let last=-1;
+ for(const st of c.steps){const pc=Math.max(0,+st.p||0),r=Math.max(1,Math.round(+st.r||1));if(!pc){out.push({w:bar,r,p:0,done:false});continue}
+  const w=rnd(base*pc/100);if(w<=bar||w>=base*.97||w===last)continue;out.push({w,r,p:pc,done:false});last=w}
+ return out}
+function refreshWU(d){if(!d)return;const seen=new Set();for(const e of d.ex){if(e.wu&&e.wu.some(w=>w.done)){if(isBar(e))seen.add(e.sw||e.lift||e.name);continue}e.wu=wuFor(e,seen)}}
+function wuRows(e,i){return(e.wu||[]).map((w,j)=>{const r=w.p&&w.w>(+P.bar||0)?solve(w.w):null,pl=r&&r.plates.length?` · ${grp(r.plates)} a side`:'';
+ return`<div class="set wset${w.done?' done':''}"><span class="n">W</span><span class="wv">${n2(w.w)}<small> ${P.unit}</small></span><span class="by">×</span><span class="wv">${w.r}</span><span class="hint">${w.p?w.p+'%':'Empty bar'}${pl}</span><button class="chk" data-act="wtick" data-e="${i}" data-s="${j}" aria-pressed="${w.done}" aria-label="Mark warm-up ${j+1} of ${esc(e.name)} done">${CHECK}</button></div>`}).join('')}
 /* swap an exercise for another, keeping sets, reps and its place in the program; weight = original × ratio */
 function swapEx(e,n,r,once){const it=XL[n]||{of:{}},base=e.lift,w0=e.sets.map(s=>+s.w||0),top=Math.max(0,...w0);
  let rr=+r||0;if(!(rr>0)&&top>0)rr=(P.xr&&P.xr[n+'|'+(base||e.name)])||(base&&it.of[base])||0;
@@ -428,11 +451,11 @@ function stash(){const d=P.draft;if(d&&d.ex.some(e=>e.sets.some(s=>s.done))){P.d
 /* ---------- views ---------- */
 let EDL=null,SUM=null,FIN=false,DEL=null,SETUP=null,RST=false,PL=null,PEND=false;
 function getDraft(){const pg=PG[P.active],ps=P.progs[P.active];if(!pg||!ps)return null;
- if(P.draft&&P.draft.prog===P.active&&P.draft.idx===ps.idx)return P.draft;
+ if(P.draft&&P.draft.prog===P.active&&P.draft.idx===ps.idx){if(P.draft.ex.some(x=>x.wu===undefined))refreshWU(P.draft);return P.draft}
  const st=P.dr&&P.dr[P.active];if(st&&st.idx===ps.idx){P.draft=st;delete P.dr[P.active];return st}
  const s=build(pg,ps);if(!s)return null;
  P.draft={prog:P.active,idx:ps.idx,label:s.label,sub:s.sub,started:0,notes:'',ex:s.ex.map(e=>({...e,sets:e.sets.map(x=>({w:x.w,p:x.w,r:x.r,a:!!x.a,reps:String(x.r),done:false}))}))};
- return P.draft}
+ refreshWU(P.draft);return P.draft}
 
 function vToday(){let h='';
  if(SUM)h+=`<div class="card sum"><div class="sumh"><b>Workout saved</b><button class="btn sm ghost" data-act="dismiss">Close</button></div>${SUM.prs.length?`<p class="prs">${SUM.prs.map(esc).join('<br>')}</p>`:''}<ul>${SUM.msg.map(m=>`<li>${esc(m)}</li>`).join('')}</ul></div>`;
@@ -444,11 +467,13 @@ function vToday(){let h='';
  const tot=d.ex.reduce((a,e)=>a+e.sets.length,0),dn=d.ex.reduce((a,e)=>a+e.sets.filter(s=>s.done).length,0);
  h+=`<section class="hero"><div class="pn">${esc(pg.name)}</div><h1>${esc(d.label)}</h1><div class="sub">${esc(d.sub)}</div><div class="meter"><i style="width:${tot?dn/tot*100:0}%"></i></div><div class="mt">${dn} of ${tot} sets done</div></section>`;
  h+=d.ex.map((e,i)=>{const top=Math.max(...e.sets.map(s=>+s.w||0));
-  return`<section class="card ex"><header>${e.tag?`<span class="tag">${esc(e.tag)}</span>`:''}<h3>${esc(e.name)}</h3><span class="scheme">${esc(scheme(e.sets))}</span></header>
+  return`<section class="card ex"><header>${e.tag?`<span class="tag">${esc(e.tag)}</span>`:''}<h3>${esc(e.name)}</h3><span class="scheme">${esc(scheme(e.sets.filter(s=>!s.x).length?e.sets.filter(s=>!s.x):e.sets))}${e.sets.some(s=>s.x)?` +${e.sets.filter(s=>s.x).length}`:''}</span></header>
   <div class="exa">${e.sw?`<span class="tag sw">${e.once?'Today only':'Swapped'}</span> <span class="mut">for ${esc(e.orig&&e.orig.name||'')}</span> · `:''}${e.sets.some(s=>s.done)?'':`<button class="lnk" data-act="xopen" data-e="${i}">${e.sw?'Change':'Swap exercise'}</button>`}</div>
   <div id="pl${i}">${isBar(e)&&top>0?plateHTML(top):''}</div>
+  <div id="wu${i}">${wuRows(e,i)}</div>
   ${e.sets.map((s,j)=>{const est=s.a&&s.done&&+s.reps>0&&+s.w>0?`<b>e1RM ${Math.round(e1(+s.w,+s.reps))}</b>`:'';
-   return`<div class="set${s.done?' done':''}"><span class="n">${j+1}</span><span class="wu"><input inputmode="decimal" data-in="w" data-e="${i}" data-s="${j}" value="${+s.w>0?n2(s.w):''}" placeholder="${e.acc?'BW':'0'}" aria-label="${esc(e.name)} set ${j+1} weight"><em>${P.unit}</em></span><span class="by">×</span><input inputmode="numeric" data-in="reps" data-e="${i}" data-s="${j}" value="${esc(s.reps)}" aria-label="${esc(e.name)} set ${j+1} reps"><span class="hint">${est||(s.a?`${s.r}+ reps<br>as many as you can`:`${s.r} reps`)}</span><button class="chk" data-act="tick" data-e="${i}" data-s="${j}" aria-pressed="${s.done}" aria-label="Mark set ${j+1} done">${CHECK}</button></div>`}).join('')}
+   return`<div class="set${s.done?' done':''}${s.x?' xset':''}"><span class="n">${s.x?'+':j+1}</span><span class="wu"><input inputmode="decimal" data-in="w" data-e="${i}" data-s="${j}" value="${+s.w>0?n2(s.w):''}" placeholder="${e.acc?'BW':'0'}" aria-label="${esc(e.name)} set ${j+1} weight"><em>${P.unit}</em></span><span class="by">×</span><input inputmode="numeric" data-in="reps" data-e="${i}" data-s="${j}" value="${esc(s.reps)}" aria-label="${esc(e.name)} set ${j+1} reps"><span class="hint">${est||(s.x?(s.done?'Extra set':`Extra · <button class="lnk" data-act="xsdel" data-e="${i}" data-s="${j}" aria-label="Remove extra set">Remove</button>`):s.a?`${s.r}+ reps<br>as many as you can`:`${s.r} reps`)}</span><button class="chk" data-act="tick" data-e="${i}" data-s="${j}" aria-pressed="${s.done}" aria-label="Mark set ${j+1} done">${CHECK}</button></div>`}).join('')}
+  <button class="lnk addset" data-act="xsadd" data-e="${i}">+ Add set</button>
   </section>`}).join('');
  h+=`<div class="card"><label class="lab" for="notes">Notes</label><textarea id="notes" data-in="notes" rows="2" placeholder="How did it feel?">${esc(d.notes)}</textarea></div>`;
  h+=FIN&&dn===0?`<div class="card"><b>Nothing is ticked yet.</b><p class="mut">Tick each set as you finish it. Not training today? Skip the session instead of saving an empty workout.</p><div class="acts"><button class="btn pri big" data-act="finishNo">Keep going</button><button class="btn" data-act="skip">Skip this session</button></div></div>`:FIN?`<div class="card"><b>Some sets aren’t ticked.</b><p class="mut">Unticked sets count as missed, which affects next session’s weights.</p><div class="acts"><button class="btn pri big" data-act="finishYes">Finish anyway</button><button class="btn" data-act="finishNo">Keep going</button></div></div>`
@@ -484,7 +509,7 @@ function xDraw(){const d=P.draft,e=d&&d.ex[XS.i];if(!e){ACT.xclose();return}cons
   <label class="fld" style="margin:0"><span class="sr">Search exercises</span><input id="xq" data-in="xq" type="search" placeholder="Search exercises" value="${esc(XS.q)}" autocomplete="off"></label><div id="xlist">${xList()}</div>
   <p class="mut" style="margin:0">Starting weights are estimates. Change set 1 and the rest follow; it remembers what you use.</p>`}
 function draftSwap(i,n,once){const d=P.draft,e=d.ex[i],o=e.orig||{name:e.name,w:e.sets.map(s=>+s.p||+s.w||0)},plain={...e,name:o.name,sw:null,once:0,bar:0,orig:null,sets:e.sets.map((x,j)=>({...x,w:o.w[j],p:o.w[j]}))};
- if(!n||n===o.name){d.ex[i]=plain;return}const t=swapEx(plain,n,0,once);t.orig=o;t.sets=t.sets.map(x=>({...x,p:x.w}));d.ex[i]=t}
+ if(!n||n===o.name){plain.wu=undefined;d.ex[i]=plain;refreshWU(d);return}const t=swapEx(plain,n,0,once);t.orig=o;t.sets=t.sets.map(x=>({...x,p:x.w}));t.wu=undefined;d.ex[i]=t;refreshWU(d)}
 function vDays(){const id=LAYP&&P.progs[LAYP]?LAYP:P.active,pg=PG[id],ps=P.progs[id];
  if(!pg||!ps||!pg.per)return`<h2 class="vh">Customize days</h2><div class="card empty"><p>${pg&&!pg.per?'Smolov Jr trains one lift per session, so there’s nothing to move.':'Set up a program first, then you can rearrange its days.'}</p><a class="btn" href="#programs">Back to programs</a></div>`;
  const l=getLay(pg,ps),sm={},swm=(P.swp&&P.swp[id])||{},nm=r=>{const k=r.d;if(!sm[k])sm[k]=(pg.session({...ps,idx:k})||{ex:[]}).ex;const e=sm[k].find(x=>x.slot===r.s);const t=e&&e.tag?`<span class="tag">${esc(e.tag)}</span> `:'';const sw=e&&swm[e.key];return t+(sw?esc(sw.n):esc(pg.alt&&pg.alt[r.s]?pg.alt[r.s]:e?e.name:r.s))},
@@ -523,6 +548,13 @@ function drawChart(){const s=$('#chart');if(!s)return;const W=s.clientWidth,H=s.
  +(PTS.length<=60?PTS.map(p=>`<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="3.5" style="fill:var(--card);stroke:var(--red)" stroke-width="2"/>`).join(''):'')
  +`<text x="${pl}" y="${H-6}" style="fill:var(--mut);font:12px Inter,sans-serif">${md(t0)}</text><text x="${W-pr}" y="${H-6}" text-anchor="end" style="fill:var(--mut);font:12px Inter,sans-serif">${md(t1)}</text>`}
 
+function wuPrev(){const ex0={sets:[{w:P.unit==='kg'?100:225}],lift:'squat'},w=wuFor(ex0,new Set());return`For a ${fw(ex0.sets[0].w)} work set: ${w.length?w.map(x=>(x.p?n2(x.w):'bar')+'×'+x.r).join(', '):'no warm-ups'}`}
+function wuCard(){const c=wuCfg();return`<div class="card"><b>Warm-up sets</b><p class="mut" style="margin:4px 0 0">Added before each barbell lift as a percentage of its first work set, rounded to your plates. Ticking them is optional and they never affect progression. 0% means the empty bar.</p>
+ <label class="tgl"><input type="checkbox" data-in="wuon"${c.on?' checked':''}><span>Add warm-up sets automatically</span></label>
+ ${c.on?`<div class="wul">${c.steps.map((st,j)=>`<div class="wus"><span class="n">${j+1}</span><span class="wu"><input inputmode="decimal" data-in="wup" data-j="${j}" value="${+st.p||0}" aria-label="Warm-up ${j+1} percent of work set"><em>%</em></span><span class="by">×</span><span class="wu"><input inputmode="numeric" data-in="wur" data-j="${j}" value="${+st.r||1}" aria-label="Warm-up ${j+1} reps"><em>reps</em></span><button class="btn sm" data-act="wudel" data-j="${j}" aria-label="Remove warm-up ${j+1}">✕</button></div>`).join('')}</div>
+ <p class="mut" id="wuprev" style="margin:8px 0 0">${wuPrev()}</p>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm" data-act="wuadd">+ Add a step</button><button class="btn sm ghost" data-act="wureset">Reset to default</button></div>
+ <label class="fld"><span>Rest after a warm-up set (0 for none)</span><span class="wu"><input inputmode="numeric" data-in="wurest" value="${c.rest}"><em>sec</em></span></label>`:''}</div>`}
 function vPrefs(){const pg=PG[P.active],ps=P.progs[P.active];
  return`<h2 class="vh">Settings</h2>
  <div class="card"><b>Weights</b>
@@ -531,6 +563,7 @@ function vPrefs(){const pg=PG[P.active],ps=P.progs[P.active];
  <label class="fld"><span>Bar weight (for the plate breakdown)</span><span class="wu"><input inputmode="decimal" data-in="pref" data-k="bar" value="${n2(P.bar)}"><em>${P.unit}</em></span></label>
  <label class="fld"><span>Rest timer</span><span class="wu"><input inputmode="numeric" data-in="pref" data-k="rest" value="${P.rest}"><em>sec</em></span></label>
  <p class="mut">Switching units converts your program numbers to the new unit.</p></div>
+ ${wuCard()}
  ${pg&&ps?`<div class="card"><b>${esc(pg.name)}: your numbers</b><p class="mut" style="margin:4px 0 0">These drive every set. Change them if a weight is off; today’s session updates if you haven’t started it.</p>
  ${pg.fields(ps).map(f=>`<label class="fld"><span>${esc(f.label)}</span><span class="wu"><input inputmode="decimal" data-in="pw" data-k="${f.k}" value="${n2(ps.w[f.k]||0)}"><em>${P.unit}</em></span></label>`).join('')}
  <div style="margin-top:14px">${RST?`<span class="cf" style="justify-content:flex-start">End this program and clear its numbers? History stays. <button class="btn sm danger" data-act="resetYes">End program</button><button class="btn sm" data-act="resetNo">Cancel</button></span>`:`<button class="btn sm" data-act="reset">End program</button>`}</div></div>`:''}
@@ -576,18 +609,24 @@ function beep(){try{const a=RT.ac;if(!a)return;[0,.35].forEach(dt=>{const o=a.cr
 
 /* ---------- actions ---------- */
 async function doFinish(){const d=P.draft,pg=PG[P.active];if(!d||!pg)return;const before=clone(P.progs[P.active]),ps=clone(before),msg=[];
- pg.advance(ps,{...d,ex:d.ex.filter(x=>!x.once)},msg);ps.idx++;
+ pg.advance(ps,{...d,ex:d.ex.filter(x=>!x.once).map(x=>({...x,sets:x.sets.filter(t=>!t.x)}))},msg);ps.idx++;
  for(const x of d.ex)if(x.sw&&x.orig&&x.sets[0]){const o=+x.orig.w[0]||0,u=+x.sets[0].w||0;if(o>0&&u>0){const r=+(u/o).toFixed(4);P.xr=P.xr||{};P.xr[x.sw+'|'+(x.lift||x.orig.name)]=r;const m=P.swp&&P.swp[P.active];if(!x.once&&m&&m[x.key]&&m[x.key].n===x.sw)m[x.key].r=r}}
- const low=[...new Set(d.ex.filter(e=>!e.acc&&e.tag!=='T3'&&e.sets.some(s=>s.done&&+s.w<(+s.p||0)-1e-9)).map(e=>e.name))];
+ const low=[...new Set(d.ex.filter(e=>!e.acc&&e.tag!=='T3'&&e.sets.some(s=>!s.x&&s.done&&+s.w<(+s.p||0)-1e-9)).map(e=>e.name))];
  if(low.length&&pg.id!=='531bbb'&&pg.id!=='smolovjr')msg.push(`${low.join(', ')}: lighter than prescribed, so it doesn’t count toward progression`);
  const log={ts:Date.now(),prev:before,prog:P.active,progName:pg.name,label:d.label,sub:d.sub,notes:d.notes||'',dur:d.started?Date.now()-d.started:0,unit:P.unit,
-  ex:d.ex.map(e=>({name:e.name,lift:e.sw?e.sw:(e.lift||null),tag:e.tag||'',sets:e.sets.map(s=>({w:+s.w||0,reps:+s.reps||0,r:s.r,a:s.a,done:s.done}))}))};
+  ex:d.ex.map(e=>({name:e.name,lift:e.sw?e.sw:(e.lift||null),tag:e.tag||'',sets:e.sets.map(s=>({w:+s.w||0,reps:+s.reps||0,r:s.r,a:s.a,done:s.done,...(s.x?{x:1}:{})})),wu:(e.wu||[]).filter(w=>w.done).length}))};
  const prs=[];for(const lift of new Set(log.ex.map(e=>e.lift).filter(k=>BARL.has(k)))){const now=bestE1(log,lift),prev=Math.max(0,...L.map(l=>bestE1(l,lift)));if(Math.round(now)>Math.round(prev)&&prev>0)prs.push(`New est. 1RM PR: ${LN[lift]} ${Math.round(now)} ${P.unit} (was ${Math.round(prev)})`)}
  for(const e of d.ex)if((e.acc||e.sw)&&e.sets[0])P.mem[e.name]=+e.sets[0].w||0;
  if(!msg.length)msg.push('Weights for the next session are ready.');
  P.progs[P.active]=ps;P.draft=null;FIN=false;SUM={msg,prs};stopRest();saveP();await addLog(log);render();scrollTo(0,0)}
 
 const ACT={
+ wtick(b){const d=P.draft;if(!d)return;const w=d.ex[+b.dataset.e].wu[+b.dataset.s];if(!w)return;w.done=!w.done;if(!d.started)d.started=Date.now();const c=wuCfg();if(w.done&&c.rest>0)startRest(c.rest);saveP();render()},
+ xsadd(b){const d=P.draft;if(!d)return;const e=d.ex[+b.dataset.e],src=e.sets[e.sets.length-1];if(!src)return;e.sets.push({w:+src.w||0,p:+src.w||0,r:src.r,a:false,reps:String(src.r),done:false,x:1});saveP();render()},
+ xsdel(b){const d=P.draft;if(!d)return;const e=d.ex[+b.dataset.e],j=+b.dataset.s;if(e.sets[j]&&e.sets[j].x&&!e.sets[j].done){e.sets.splice(j,1);saveP();render()}},
+ wuadd(){const c=wuCfg(),st=c.steps.slice(),lp=st.length?+st[st.length-1].p||0:0;st.push({p:Math.min(95,lp?lp+10:50),r:2});P.wu={...c,steps:st};refreshWU(P.draft);saveP();render()},
+ wudel(b){const c=wuCfg(),st=c.steps.slice();st.splice(+b.dataset.j,1);P.wu={...c,steps:st};refreshWU(P.draft);saveP();render()},
+ wureset(){P.wu=defaults().wu;refreshWU(P.draft);saveP();render();toast('Warm-ups reset')},
  tick(b){const d=P.draft;if(!d)return;const s=d.ex[+b.dataset.e].sets[+b.dataset.s];s.done=!s.done;if(!d.started)d.started=Date.now();if(s.done&&P.rest>0)startRest(+P.rest);saveP();render()},
  finish(){const d=P.draft;if(d&&d.ex.some(e=>e.sets.some(s=>!s.done))){FIN=true;render()}else doFinish()},
  finishYes(){doFinish()},finishNo(){FIN=false;render()},
@@ -651,15 +690,18 @@ const ACT={
 function showRaw(txt){const t=$('#impt');if(t){t.closest('details').open=true;t.value=txt;t.select();toast('Copy the text in the box')}}
 document.addEventListener('click',ev=>{const b=ev.target.closest('[data-act]');if(b&&ACT[b.dataset.act]){ev.preventDefault();ACT[b.dataset.act](b)}});
 document.addEventListener('input',ev=>{const t=ev.target,k=t.dataset.in;if(!k)return;const d=P.draft;
- if((k==='w'||k==='reps')&&d){const s=d.ex[+t.dataset.e].sets[+t.dataset.s];if(k==='w'){const old=+s.w,nw=parseFloat(t.value)||0,ss=d.ex[+t.dataset.e].sets;s.w=nw;for(let j=+t.dataset.s+1;j<ss.length;j++){const x=ss[j];if(!x.done&&+x.w===old){x.w=nw;const el=document.querySelector(`input[data-in=w][data-e="${t.dataset.e}"][data-s="${j}"]`);if(el)el.value=nw>0?n2(nw):''}}const ee=d.ex[+t.dataset.e],pe=document.getElementById('pl'+t.dataset.e);if(pe){const tp=Math.max(...ee.sets.map(x=>+x.w||0));pe.innerHTML=isBar(ee)&&tp>0?plateHTML(tp):''}}else s.reps=t.value.replace(/[^0-9]/g,'');saveP()}
+ if((k==='w'||k==='reps')&&d){const s=d.ex[+t.dataset.e].sets[+t.dataset.s];if(k==='w'){const old=+s.w,nw=parseFloat(t.value)||0,ss=d.ex[+t.dataset.e].sets;s.w=nw;for(let j=+t.dataset.s+1;j<ss.length;j++){const x=ss[j];if(!x.done&&+x.w===old){x.w=nw;const el=document.querySelector(`input[data-in=w][data-e="${t.dataset.e}"][data-s="${j}"]`);if(el)el.value=nw>0?n2(nw):''}}const ee=d.ex[+t.dataset.e],pe=document.getElementById('pl'+t.dataset.e);if(pe){const tp=Math.max(...ee.sets.map(x=>+x.w||0));pe.innerHTML=isBar(ee)&&tp>0?plateHTML(tp):''}if(+t.dataset.s===0&&!(ee.wu||[]).some(w=>w.done)){refreshWU(d);d.ex.forEach((x,q)=>{const c=document.getElementById('wu'+q);if(c)c.innerHTML=wuRows(x,q)})}}else s.reps=t.value.replace(/[^0-9]/g,'');saveP()}
  else if(k==='ed'&&EDL){const x=EDL.ex[+t.dataset.e].sets[+t.dataset.s];if(t.dataset.f==='w')x.w=Math.max(0,parseFloat(t.value)||0);else{const n=parseInt(t.value.replace(/[^0-9]/g,''),10)||0;x.reps=n;x.done=n>0}}
  else if(k==='edn'&&EDL){EDL.notes=t.value}
+ else if(k==='wuon'){P.wu={...wuCfg(),on:t.checked};refreshWU(P.draft);saveP();render()}
+ else if(k==='wup'||k==='wur'){const c=wuCfg(),st=c.steps.map(x=>({...x})),j=+t.dataset.j,n=parseFloat(t.value);if(st[j]&&n>=0){if(k==='wup')st[j].p=Math.min(100,n);else st[j].r=Math.max(1,Math.round(n));P.wu={...c,steps:st};refreshWU(P.draft);saveP();const pv=$('#wuprev');if(pv)pv.innerHTML=wuPrev()}}
+ else if(k==='wurest'){const n=parseFloat(t.value);if(n>=0){P.wu={...wuCfg(),rest:Math.round(n)};saveP()}}
  else if(k==='xq'){XS.q=t.value;const l=$('#xlist');if(l)l.innerHTML=xList()}
  else if(k==='lmove'){const to=+t.value,da=+t.dataset.d,i=+t.dataset.i;if(to!==da)edLay(l=>{const[x]=l.days[da].splice(i,1);if(x)l.days[to].push(x)})}
  else if(k==='lback'){if(t.value!=='')edLay(l=>{const[x]=l.off.splice(+t.dataset.i,1);if(x)l.days[+t.value].push(x)})}
  else if(k==='notes'&&d){d.notes=t.value;saveP()}
  else if(k==='pref'){const key=t.dataset.k;if(key==='unit'){const from=P.unit,to=t.value;if(from===to)return;P.unit=to;P.round=to==='lb'?5:2.5;P.bar=to==='lb'?45:20;const c=w=>+w>0?rnd(cv(+w,from)):w;for(const id in P.progs){const ps=P.progs[id];for(const o of[ps.w,ps.base])if(o)for(const q in o)o[q]=c(o[q])}for(const q in P.mem)P.mem[q]=c(P.mem[q]);P.draft=null;P.dr={};saveP();render();toast('Program numbers converted to '+to);return}
-  const n=parseFloat(t.value);if(n>=0){P[key]=n;if(key==='bar'){const o=$('#pcout');if(o)o.innerHTML=pcOut()}if(key==='round'&&P.draft&&!P.draft.ex.some(e=>e.sets.some(s=>s.done)))P.draft=null;saveP()}}
+  const n=parseFloat(t.value);if(n>=0){P[key]=n;if(key==='bar'){const o=$('#pcout');if(o)o.innerHTML=pcOut()}if(key==='bar'||key==='round')refreshWU(P.draft);if(key==='round'&&P.draft&&!P.draft.ex.some(e=>e.sets.some(s=>s.done)))P.draft=null;saveP()}}
  else if(k==='pcw'){const n=parseFloat(t.value);P.pcw=n>0?n:0;saveP();const o=$('#pcout');if(o)o.innerHTML=pcOut()}
  else if(k==='pw'){const ps=P.progs[P.active];if(!ps)return;ps.w[t.dataset.k]=parseFloat(t.value)||0;if(P.draft&&!P.draft.ex.some(e=>e.sets.some(s=>s.done)))P.draft=null;saveP()}});
 
