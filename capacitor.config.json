@@ -1,0 +1,15 @@
+{
+  "appId": "com.kawana87.ironlog",
+  "appName": "Iron Log",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#16181c"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_ironlog",
+      "iconColor": "#e0262e"
+    }
+  }
+}

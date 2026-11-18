@@ -1,0 +1,100 @@
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.KEYSTORE_B64 != '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install and sync
+        run: |
+          set -o pipefail
+          {
+            npm ci
+            sed -i "s/__APP_VERSION__/1.${{ github.run_number }}/" www/index.html
+            npx cap sync android
+          } 2>&1 | tee -a build.log
+
+      # Without the signing key, only check that the app compiles (nothing is published),
+      # so a phone never gets a build that a later update can't install over.
+      - name: Compile check (no signing key yet)
+        if: env.HAS_KEY != 'true'
+        working-directory: android
+        env:
+          BUILD_NUM: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee -a ../build.log
+          echo "::warning::Compiled fine, but not published: add the KEYSTORE_B64 and KEYSTORE_PASS secrets to publish signed releases."
+
+      - name: Build signed app
+        if: env.HAS_KEY == 'true'
+        working-directory: android
+        env:
+          BUILD_NUM: ${{ github.run_number }}
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KS_ALIAS: ironlog
+        run: |
+          set -o pipefail
+          echo "$KS_B64" | tr -d ' \n\r' | base64 -d > "$RUNNER_TEMP/release.jks"
+          export KS_PATH="$RUNNER_TEMP/release.jks"
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee -a ../build.log
+          rm -f "$RUNNER_TEMP/release.jks"
+          cp app/build/outputs/apk/release/app-release.apk ../iron-log.apk
+
+      - name: Publish release
+        if: env.HAS_KEY == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.${{ github.run_number }}
+          name: Iron Log 1.${{ github.run_number }}
+          body: |
+            ${{ github.event.head_commit.message }}
+
+            **Install or update:** on your phone, download `iron-log.apk` below and open it. Updating keeps your workouts.
+          files: iron-log.apk
+          make_latest: true
+
+      # Keep the build log in the repo (ci-logs branch) so problems can be diagnosed without Actions access.
+      - name: Save build log
+        if: always()
+        run: |
+          git config user.name "iron-log-ci"
+          git config user.email "iron-log-ci@users.noreply.github.com"
+          mkdir -p /tmp/logs && cp build.log "/tmp/logs/run-${{ github.run_number }}-${{ job.status }}.log" 2>/dev/null || echo "no log" > /tmp/logs/run-${{ github.run_number }}.log
+          git fetch origin ci-logs --depth=1 2>/dev/null && git checkout -q -B ci-logs FETCH_HEAD || git checkout -q --orphan ci-logs
+          git rm -rq --cached . 2>/dev/null || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp /tmp/logs/* . && ls -t *.log | tail -n +11 | xargs -r rm --
+          git add -A && git commit -qm "Build log ${{ github.run_number }} (${{ job.status }})" && git push -q origin ci-logs
